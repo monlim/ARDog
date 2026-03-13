@@ -1,23 +1,18 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>A-Frame Marker AR Object</title>
-    <!-- Import A-Frame library -->
-    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-    <!-- Import AR.js library (marker + location based support) -->
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  </head>
-  <!-- Set body style to remove margins and hide overflow for a full-screen AR experience -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <!-- we import arjs version without NFT but with marker + location based support -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <body style="margin : 0px; overflow: hidden;">
-    <!-- Define the AR scene -->
     <a-scene embedded arjs>
-      <!-- Define a marker with the 'hiro' preset -->
       <a-marker preset="hiro">
-        <!-- Everything inside the <a-marker> tag will appear on the marker -->
-        <a-box color="red" position="0 0.5 0" scale="1 1 1"></a-box>
+        <a-entity
+          position="0 0 0"
+          scale="0.05 0.05 0.05"
+          gltf-model="https://raw.githack.com/AR-js-org/AR.js/master/aframe/examples/image-tracking/nft/trex/scene.gltf"
+        ></a-entity>
       </a-marker>
-      <!-- Add a camera to enable the AR experience -->
-      
+      <a-entity camera></a-entity>
     </a-scene>
   </body>
 </html>
