@@ -7,10 +7,14 @@
   <body style="margin : 0px; overflow: hidden;">
     <a-scene embedded arjs>
       <a-marker preset="hiro">
+        <a-assets>
+          <a-asset-item id="dog" response-type="arraybuffer" src="./dog.glb"></a-asset-item>
+        </a-assets>
         <a-entity
           position="0 0 0"
           scale="1 1 1"
-          gltf-model=./dog.glb
+          gltf-model="#dog"
+          animation-mixer="clip:Animation"; loop: infinite
         ></a-entity>
       </a-marker>
       <a-entity camera></a-entity>
