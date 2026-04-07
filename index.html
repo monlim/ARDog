@@ -1,66 +1,116 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.1/dist/aframe-extras.min.js"></script>
 
+    <style>
+      #hint {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.55);
+        color: #fff;
+        font-family: sans-serif;
+        font-size: 15px;
+        padding: 10px 20px;
+        border-radius: 20px;
+        pointer-events: none;
+        z-index: 999;
+      }
+    </style>
+
     <script>
-      // Places the entity at the user's current GPS location, offset by
-      // `forwardMeters` in the direction the device compass is facing,
-      // and `aboveHeadMeters` above an assumed 1.8 m head height.
-      AFRAME.registerComponent('gps-relative-place', {
-        schema: {
-          forwardMeters:    { type: 'number', default: 1 },
-          aboveHeadMeters:  { type: 'number', default: 2 }
+      AFRAME.registerComponent('hit-test-placer', {
+        init: function () {
+          this.hitTestSource  = null;
+          this.lastHitMatrix  = new THREE.Matrix4();
+          this.hasHit         = false;
+          this.dogPlaced      = false;
+
+          this.reticle = document.getElementById('reticle');
+          this.dog     = document.getElementById('dog-entity');
+          this.hint    = document.getElementById('hint');
+
+          const scene = this.el;
+
+          // When the user enters AR mode, request a hit-test source.
+          scene.addEventListener('enter-vr', () => {
+            const session = scene.renderer.xr.getSession();
+            if (!session) return;
+
+            session.addEventListener('select', () => this.onSelect());
+
+            // A viewer-space hit-test source casts a ray from the centre of
+            // the screen forward — perfect for a phone AR experience.
+            session.requestReferenceSpace('viewer').then((viewerSpace) => {
+              session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+                this.hitTestSource = source;
+                if (this.hint) this.hint.textContent = 'Point at the floor, then tap to place';
+              });
+            }).catch((err) => console.error('Hit-test source error:', err));
+          });
+
+          scene.addEventListener('exit-vr', () => {
+            this.hitTestSource = null;
+            this.hasHit = false;
+            this.reticle.setAttribute('visible', false);
+            if (this.hint) this.hint.textContent = 'Tap "Start AR" to begin';
+          });
         },
 
-        init: function () {
-          this.compassHeading = 0;
+        tick: function () {
+          if (!this.hitTestSource) return;
 
-          // --- Compass heading ---
-          // iOS supplies webkitCompassHeading (degrees clockwise from north).
-          // Android with absolute orientation supplies alpha (degrees CCW from north
-          // on some browsers) – we negate and normalise to get CW-from-north.
-          const onOrientation = (e) => {
-            if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-              this.compassHeading = e.webkitCompassHeading;
-            } else if (e.alpha !== null) {
-              this.compassHeading = (360 - e.alpha) % 360;
+          const frame = this.el.sceneEl.frame;
+          if (!frame) return;
+
+          const xr             = this.el.sceneEl.renderer.xr;
+          const referenceSpace = xr.getReferenceSpace();
+          const results        = frame.getHitTestResults(this.hitTestSource);
+
+          if (results.length > 0) {
+            const pose = results[0].getPose(referenceSpace);
+            if (pose) {
+              this.hasHit = true;
+              this.lastHitMatrix.fromArray(pose.transform.matrix);
+
+              // Move the reticle to the hit point.
+              const pos = new THREE.Vector3();
+              const quat = new THREE.Quaternion();
+              const scale = new THREE.Vector3();
+              this.lastHitMatrix.decompose(pos, quat, scale);
+
+              this.reticle.setAttribute('visible', true);
+              this.reticle.object3D.position.copy(pos);
+              // Align the reticle ring to the detected surface normal.
+              this.reticle.object3D.quaternion.copy(quat);
             }
-          };
-          window.addEventListener('deviceorientationabsolute', onOrientation, true);
-          window.addEventListener('deviceorientation',         onOrientation, true);
+          } else {
+            this.hasHit = false;
+            this.reticle.setAttribute('visible', false);
+          }
+        },
 
-          // --- GPS position ---
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              const lat     = pos.coords.latitude;
-              const lon     = pos.coords.longitude;
-              const heading = this.compassHeading;
+        onSelect: function () {
+          if (!this.hasHit) return;
 
-              const forwardM    = this.data.forwardMeters;
-              const headingRad  = (heading * Math.PI) / 180;
+          const pos = new THREE.Vector3();
+          const quat = new THREE.Quaternion();
+          const scale = new THREE.Vector3();
+          this.lastHitMatrix.decompose(pos, quat, scale);
 
-              // 1 degree latitude  ≈ 111 111 m
-              // 1 degree longitude ≈ 111 111 * cos(lat) m
-              const mPerDegLat = 111111;
-              const mPerDegLon = 111111 * Math.cos(lat * Math.PI / 180);
+          this.dog.object3D.position.copy(pos);
+          // Keep the dog upright; only inherit the Y rotation from the surface.
+          const euler = new THREE.Euler().setFromQuaternion(quat, 'YXZ');
+          this.dog.object3D.rotation.set(0, euler.y, 0);
+          this.dog.setAttribute('visible', true);
+          this.dogPlaced = true;
 
-              const newLat = lat + (forwardM * Math.cos(headingRad)) / mPerDegLat;
-              const newLon = lon + (forwardM * Math.sin(headingRad)) / mPerDegLon;
-
-              // Y = assumed head height (1.8 m) + desired clearance above head
-              const yOffset = 1.8 + this.data.aboveHeadMeters;
-
-              this.el.setAttribute('gps-entity-place', `latitude: ${newLat}; longitude: ${newLon};`);
-              this.el.setAttribute('position',         `0 ${yOffset} 0`);
-
-              console.log(`Dog placed at ${newLat.toFixed(7)}, ${newLon.toFixed(7)}, Y=${yOffset} m`);
-            },
-            (err) => console.error('Geolocation error:', err),
-            { enableHighAccuracy: true, timeout: 10000 }
-          );
+          if (this.hint) this.hint.textContent = 'Tap again to move the dog';
         }
       });
     </script>
@@ -68,26 +118,37 @@
 
   <body style="margin:0; overflow:hidden;">
 
+    <div id="hint">Tap "Start AR" to begin</div>
+
     <a-scene
-      vr-mode-ui="enabled: false"
-      embedded
-      arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;">
+      webxr="requiredFeatures: hit-test,local-floor; optionalFeatures: dom-overlay; overlayElement: #hint;"
+      renderer="colorManagement: true;"
+      vr-mode-ui="enabled: true;"
+      hit-test-placer>
 
       <a-assets>
         <a-asset-item id="dog" src="./Dog.glb"></a-asset-item>
       </a-assets>
 
-      <!-- Dog entity: placed 1 m in front and 2 m above the user's head -->
+      <!-- Reticle: a flat ring that hugs the detected surface -->
+      <a-ring
+        id="reticle"
+        radius-inner="0.06"
+        radius-outer="0.12"
+        visible="false"
+        material="color: #fff; opacity: 0.85; side: double; shader: flat;">
+      </a-ring>
+
+      <!-- Dog: hidden until the user taps -->
       <a-entity
         id="dog-entity"
         gltf-model="#dog"
+        visible="false"
         scale="1 1 1"
-        rotation="0 0 0"
-        animation-mixer="clip: Animation; loop: repeat"
-        gps-relative-place="forwardMeters: 1; aboveHeadMeters: 2">
+        animation-mixer="clip: Animation; loop: repeat">
       </a-entity>
 
-      <a-camera gps-camera rotation-reader></a-camera>
+      <a-camera></a-camera>
 
     </a-scene>
 
