@@ -9,8 +9,8 @@
         AFRAME.registerComponent('place-at-bearing', {
             schema: {
                 bearing: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 3 },
-                height: { type: 'number', default: 3 }
+                distance: { type: 'number', default: 10 },
+                height: { type: 'number', default: 0 }
             },
             init: function () {
                 const rad = THREE.MathUtils.degToRad(this.data.bearing);
@@ -22,24 +22,30 @@
 
         AFRAME.registerComponent('play-all-animations', {
             init: function () {
-                this.el.addEventListener('model-loaded', () => {
-                    const mesh = this.el.getObject3D('mesh');
-                    if (!mesh) return;
-
-                    const clips = (this.el.components['gltf-model'] &&
-                                   this.el.components['gltf-model'].model &&
-                                   this.el.components['gltf-model'].model.animations) || [];
-
-                    const clip = clips.find(c => c.name === 'Animation');
-                    if (!clip) {
-                        console.warn('Animation clip not found.');
+                this.el.addEventListener('model-loaded', (e) => {
+                    // Use the model directly from the event
+                    const model = e.detail.model;
+                    if (!model) {
+                        console.warn('No model found in event detail.');
                         return;
                     }
 
-                    const mixer = new THREE.AnimationMixer(mesh);
+                    const clips = model.animations || [];
+                    console.log('Model loaded. Clips found:', clips.map(c => c.name));
+
+                    const clip = clips.find(c => c.name === 'Animation');
+                    if (!clip) {
+                        console.warn('Animation clip not found. Available:', clips.map(c => c.name));
+                        return;
+                    }
+
+                    // Create mixer on the model root, not the mesh
+                    const mixer = new THREE.AnimationMixer(model);
                     const action = mixer.clipAction(clip);
                     action.setLoop(THREE.LoopRepeat, Infinity);
                     action.play();
+
+                    console.log('Animation started:', clip.name);
 
                     this.mixer = mixer;
                     this.lastTime = performance.now();
@@ -64,7 +70,7 @@
             <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb"></a-asset-item>
         </a-assets>
 
-        <a-entity place-at-bearing="bearing: 45; distance: 3; height: 3">
+        <a-entity place-at-bearing="bearing: 0; distance: 3; height: 3">
             <a-entity
                 gltf-model="#dog"
                 scale="0.5 0.5 0.5"
