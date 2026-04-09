@@ -20,32 +20,27 @@
             }
         });
 
-        // Robust animation starter — waits for model to fully load
         AFRAME.registerComponent('play-all-animations', {
             init: function () {
                 this.el.addEventListener('model-loaded', () => {
                     const mesh = this.el.getObject3D('mesh');
                     if (!mesh) return;
 
-                    const mixer = new THREE.AnimationMixer(mesh);
-                    const clips = mesh.animations || 
-                                  (this.el.components['gltf-model'] && 
-                                   this.el.components['gltf-model'].model && 
+                    const clips = (this.el.components['gltf-model'] &&
+                                   this.el.components['gltf-model'].model &&
                                    this.el.components['gltf-model'].model.animations) || [];
 
-                    console.log('Available animation clips:', clips.map(c => c.name));
-
-                    if (clips.length === 0) {
-                        console.warn('No animations found on this model.');
+                    const clip = clips.find(c => c.name === 'Animation');
+                    if (!clip) {
+                        console.warn('Animation clip not found.');
                         return;
                     }
 
-                    // Play all clips (or change index to pick one)
-                    clips.forEach(clip => {
-                        mixer.clipAction(clip).play();
-                    });
+                    const mixer = new THREE.AnimationMixer(mesh);
+                    const action = mixer.clipAction(clip);
+                    action.setLoop(THREE.LoopRepeat, Infinity);
+                    action.play();
 
-                    // Tick the mixer every frame
                     this.mixer = mixer;
                     this.lastTime = performance.now();
                 });
@@ -69,7 +64,7 @@
             <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb"></a-asset-item>
         </a-assets>
 
-        <a-entity place-at-bearing="bearing: 0; distance: 3; height: 3">
+        <a-entity place-at-bearing="bearing: 45; distance: 3; height: 3">
             <a-entity
                 gltf-model="#dog"
                 scale="0.5 0.5 0.5"
