@@ -2,23 +2,46 @@
 <html>
 <head>
     <meta charset='utf-8'>
-    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
-    <title>GeoAR.js demo</title>
-    <script src='https://aframe.io/releases/0.9.2/aframe.min.js'></script>
-    <script src="https://raw.githack.com/jeromeetienne/AR.js/master/aframe/build/aframe-ar.min.js"></script>
-    <script src="https://raw.githack.com/donmccurdy/aframe-extras/master/dist/aframe-extras.loaders.min.js"></script>
+    <title>Indoor AR - Compass Aligned</title>
+    <script src='https://aframe.io/releases/1.4.0/aframe.min.js'></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script>
-        THREEx.ArToolkitContext.baseURL = 'https://raw.githack.com/jeromeetienne/ar.js/master/three.js/'
+        // Place entity at a compass bearing and distance from camera
+        AFRAME.registerComponent('place-at-bearing', {
+            schema: {
+                bearing: { type: 'number', default: 0 },  // degrees from north
+                distance: { type: 'number', default: 3 }, // metres
+                height: { type: 'number', default: 0.5 }
+            },
+            init: function () {
+                const rad = THREE.MathUtils.degToRad(this.data.bearing);
+                const x = this.data.distance * Math.sin(rad);
+                const z = -this.data.distance * Math.cos(rad);
+                this.el.setAttribute('position', {
+                    x: x,
+                    y: this.data.height,
+                    z: z
+                });
+            }
+        });
     </script>
 </head>
-
 <body style='margin: 0; overflow: hidden;'>
     <a-scene
         vr-mode-ui="enabled: false"
-		embedded
-        arjs='sourceType: webcam; sourceWidth:1280; sourceHeight:960; displayWidth: 1280; displayHeight: 960; debugUIEnabled: false;'>
-        <a-entity gltf-model="./assets/magnemite/scene.gltf" rotation="0 180 0" scale="0.5 0.5 0.5" gps-entity-place="longitude: 151.205660; latitude: -33.879837;" animation-mixer/>
+        embedded
+        arjs='sourceType: webcam; debugUIEnabled: false;'>
         
-        <a-camera gps-camera rotation-reader></a-camera>
-	</a-scene>
+        <a-assets>
+          <a-asset-item id="dog" response-type="arraybuffer" src="https://github.com/monlim/ARDog/blob/main/Dog.glb" ></a-asset-item>
+        </a-assets>
+
+        <!-- 3m away at 90° (east), 0.5m high -->
+        <a-entity gltf-model="#dog" place-at-bearing="bearing: 0; distance: 3; height: 3" rotation="0 0 0" scale="1. 1. 1." animation-mixer="clip: Animation; loop: repeat">
+        <!--<a-box place-at-bearing="bearing: 0; distance: 10; height: 10" material='color: red; opacity: 0.8;' scale='2. 2. 2.'></a-box>-->
+
+        <!-- Enable compass-based orientation -->
+        <a-camera look-controls="enabled: true"></a-camera>
+    </a-scene>
 </body>
+</html>
