@@ -33,7 +33,7 @@
                     const clips = model.animations || [];
                     console.log('Model loaded. Clips found:', clips.map(c => c.name));
 
-                    const clip = clips.find(c => c.name === 'Animation');
+                    const clip = clips.find(c => c.name === 'Labrador|labrador_swim_bank_lft_01');
                     if (!clip) {
                         console.warn('Animation clip not found. Available:', clips.map(c => c.name));
                         return;
@@ -70,10 +70,10 @@
             <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb"></a-asset-item>
         </a-assets>
 
-        <a-entity place-at-bearing="bearing: 0; distance: 3; height: 3">
+        <a-entity place-at-bearing="bearing: 0; distance: 5; height: 3">
             <a-entity
                 gltf-model="#dog"
-                scale="0.5 0.5 0.5"
+                scale="1 1 1"
                 rotation="0 0 0"
                 play-all-animations>
             </a-entity>
