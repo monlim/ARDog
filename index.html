@@ -6,22 +6,17 @@
     <script src='https://aframe.io/releases/1.4.0/aframe.min.js'></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script>
-        // Place entity at a compass bearing and distance from camera
         AFRAME.registerComponent('place-at-bearing', {
             schema: {
-                bearing: { type: 'number', default: 0 },  // degrees from north
-                distance: { type: 'number', default: 3 }, // metres
-                height: { type: 'number', default: 0.5 }
+                bearing: { type: 'number', default: 0 },
+                distance: { type: 'number', default: 10 },
+                height: { type: 'number', default: 0 }
             },
             init: function () {
                 const rad = THREE.MathUtils.degToRad(this.data.bearing);
                 const x = this.data.distance * Math.sin(rad);
                 const z = -this.data.distance * Math.cos(rad);
-                this.el.setAttribute('position', {
-                    x: x,
-                    y: this.data.height,
-                    z: z
-                });
+                this.el.setAttribute('position', { x: x, y: this.data.height, z: z });
             }
         });
     </script>
@@ -31,17 +26,24 @@
         vr-mode-ui="enabled: false"
         embedded
         arjs='sourceType: webcam; debugUIEnabled: false;'>
-        
+
         <a-assets>
-          <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb" ></a-asset-item>
+            <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb"></a-asset-item>
         </a-assets>
 
-        <!-- 3m away at 90° (east), 0.5m high -->
-        <a-entity gltf-model="#dog" place-at-bearing="bearing: 0; distance: 10; height: 10" rotation="0 0 90" scale="0.01 0.01 0.01" animation-mixer="clip: Animation; loop: repeat">
-        <!--<a-box place-at-bearing="bearing: 0; distance: 10; height: 10" material='color: red; opacity: 0.8;' scale='2. 2. 2.'></a-box>-->
+        <!-- Wrapper entity handles position/bearing -->
+        <a-entity place-at-bearing="bearing: 45; distance: 3; height: 0">
+            <!-- Inner entity handles model + scale independently -->
+            <a-entity
+                gltf-model="#dog"
+                scale="0.5 0.5 0.5"
+                rotation="0 0 0"
+                animation-mixer="clip: Animation; loop: repeat">
+            </a-entity>
+        </a-entity>
 
-        <!-- Enable compass-based orientation -->
         <a-camera look-controls="enabled: true"></a-camera>
+
     </a-scene>
 </body>
 </html>
