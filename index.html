@@ -33,7 +33,7 @@
                     const clips = model.animations || [];
                     console.log('Model loaded. Clips found:', clips.map(c => c.name));
 
-                    const clip = clips.find(c => c.name === 'Labrador|labrador_swim_bank_lft_01');
+                    const clip = clips.find(c => c.name === 'Animation');
                     if (!clip) {
                         console.warn('Animation clip not found. Available:', clips.map(c => c.name));
                         return;
