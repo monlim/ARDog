@@ -9,8 +9,8 @@
         AFRAME.registerComponent('place-at-bearing', {
             schema: {
                 bearing: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 10 },
-                height: { type: 'number', default: 0 }
+                distance: { type: 'number', default: 3 },
+                height: { type: 'number', default: 3 }
             },
             init: function () {
                 const rad = THREE.MathUtils.degToRad(this.data.bearing);
@@ -32,7 +32,7 @@
         </a-assets>
 
         <!-- Wrapper entity handles position/bearing -->
-        <a-entity place-at-bearing="bearing: 45; distance: 3; height: 0">
+        <a-entity place-at-bearing="bearing: 45; distance: 3; height: 3">
             <!-- Inner entity handles model + scale independently -->
             <a-entity
                 gltf-model="#dog"
