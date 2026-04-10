@@ -6,30 +6,74 @@
     <script src='https://aframe.io/releases/1.4.0/aframe.min.js'></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
     <script>
+        // Captures device compass heading once, then places entity at a fixed world position
         AFRAME.registerComponent('place-at-bearing', {
             schema: {
                 bearing: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 10 },
+                distance: { type: 'number', default: 5 },
                 height: { type: 'number', default: 0 }
             },
             init: function () {
-                const rad = THREE.MathUtils.degToRad(this.data.bearing);
-                const x = this.data.distance * Math.sin(rad);
-                const z = -this.data.distance * Math.cos(rad);
-                this.el.setAttribute('position', { x: x, y: this.data.height, z: z });
+                const placeEntity = (compassHeading) => {
+                    // Combine device heading with desired bearing offset
+                    const totalBearing = (compassHeading + this.data.bearing) % 360;
+                    const rad = THREE.MathUtils.degToRad(totalBearing);
+                    const x = this.data.distance * Math.sin(rad);
+                    const z = -this.data.distance * Math.cos(rad);
+
+                    this.el.setAttribute('position', {
+                        x: x,
+                        y: this.data.height,
+                        z: z
+                    });
+
+                    console.log(`Dog placed at world position x:${x.toFixed(2)}, z:${z.toFixed(2)} (heading: ${compassHeading.toFixed(1)}°)`);
+                };
+
+                // Try to get compass heading from device
+                if (window.DeviceOrientationEvent) {
+                    const handler = (e) => {
+                        // webkitCompassHeading is iOS, alpha is Android (needs converting)
+                        let heading = e.webkitCompassHeading;
+                        if (heading === undefined || heading === null) {
+                            heading = e.alpha ? (360 - e.alpha) % 360 : 0;
+                        }
+                        placeEntity(heading);
+                        // Only need heading once — remove listener after placing
+                        window.removeEventListener('deviceorientation', handler);
+                    };
+
+                    // iOS 13+ requires permission
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        DeviceOrientationEvent.requestPermission()
+                            .then(state => {
+                                if (state === 'granted') {
+                                    window.addEventListener('deviceorientation', handler, { once: false });
+                                } else {
+                                    console.warn('Compass permission denied, placing at default bearing.');
+                                    placeEntity(0);
+                                }
+                            })
+                            .catch(() => placeEntity(0));
+                    } else {
+                        window.addEventListener('deviceorientation', handler);
+                    }
+                } else {
+                    // Fallback for desktop/no compass — place straight ahead
+                    console.warn('DeviceOrientation not supported, placing at default bearing.');
+                    placeEntity(0);
+                }
             }
         });
 
         AFRAME.registerComponent('play-all-animations', {
             init: function () {
                 this.el.addEventListener('model-loaded', (e) => {
-                    // Use the model directly from the event
                     const model = e.detail.model;
                     if (!model) {
                         console.warn('No model found in event detail.');
                         return;
                     }
-
                     const clips = model.animations || [];
                     console.log('Model loaded. Clips found:', clips.map(c => c.name));
 
@@ -39,14 +83,12 @@
                         return;
                     }
 
-                    // Create mixer on the model root, not the mesh
                     const mixer = new THREE.AnimationMixer(model);
                     const action = mixer.clipAction(clip);
                     action.setLoop(THREE.LoopRepeat, Infinity);
                     action.play();
 
                     console.log('Animation started:', clip.name);
-
                     this.mixer = mixer;
                     this.lastTime = performance.now();
                 });
