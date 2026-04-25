@@ -1,128 +1,792 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset='utf-8'>
-    <title>Indoor AR - Compass Aligned</title>
-    <script src='https://aframe.io/releases/1.4.0/aframe.min.js'></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    <script>
-        // Captures device compass heading once, then places entity at a fixed world position
-        AFRAME.registerComponent('place-at-bearing', {
-            schema: {
-                bearing: { type: 'number', default: 0 },
-                distance: { type: 'number', default: 5 },
-                height: { type: 'number', default: 0 }
-            },
-            init: function () {
-                const placeEntity = (compassHeading) => {
-                    // Combine device heading with desired bearing offset
-                    const totalBearing = (compassHeading + this.data.bearing) % 360;
-                    const rad = THREE.MathUtils.degToRad(totalBearing);
-                    const x = this.data.distance * Math.sin(rad);
-                    const z = -this.data.distance * Math.cos(rad);
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>AR Dog</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700&family=Instrument+Serif:ital@0;1&display=swap');
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --cream: #f2ede6;
+            --bark:  #3d2b1f;
+            --gold:  #d4a853;
+        }
+        body {
+            background: var(--bark);
+            color: var(--cream);
+            font-family: 'Syne', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-                    this.el.setAttribute('position', {
-                        x: x,
-                        y: this.data.height,
-                        z: z
-                    });
+        /* ── Debug overlay ── */
+        #debug {
+            display: none;
+            position: fixed; inset: 0;
+            background: #0a0a0a;
+            z-index: 999;
+            padding: 2rem 1.5rem;
+            overflow-y: auto;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        #debug.visible { display: flex; }
+        #debug h3 {
+            font-size: 0.7rem; letter-spacing: 0.18em;
+            text-transform: uppercase; color: #d4a853;
+            margin-bottom: 0.4rem;
+        }
+        .drow {
+            font-size: 0.72rem; font-family: monospace;
+            line-height: 1.7; color: #aaa;
+        }
+        .drow .k { color: #888; min-width: 180px; display: inline-block; }
+        .drow .ok  { color: #7ec87e; }
+        .drow .err { color: #e07070; }
+        .drow .warn{ color: #d4a853; }
+        #debug-close {
+            margin-top: 1.5rem;
+            background: #d4a853; border: none;
+            color: #0a0a0a; font-family: 'Syne', sans-serif;
+            font-size: 0.68rem; font-weight: 700;
+            letter-spacing: 0.15em; text-transform: uppercase;
+            padding: 0.9rem 2rem; cursor: pointer; border-radius: 2px;
+            align-self: flex-start;
+        }
+        #debug-retry {
+            margin-top: 0.5rem;
+            background: transparent;
+            border: 1px solid #d4a85366;
+            color: #d4a853; font-family: 'Syne', sans-serif;
+            font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+            padding: 0.8rem 2rem; cursor: pointer; border-radius: 2px;
+            align-self: flex-start;
+        }
 
-                    console.log(`Dog placed at world position x:${x.toFixed(2)}, z:${z.toFixed(2)} (heading: ${compassHeading.toFixed(1)}°)`);
-                };
+        /* ── Shared screen ── */
+        .screen {
+            display: none; position: fixed; inset: 0;
+            background: var(--bark);
+            flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center; padding: 2.5rem; gap: 1.2rem;
+            z-index: 100;
+        }
+        .screen.visible { display: flex; }
+        .screen .icon { font-size: 3.5rem; }
+        .screen h2 {
+            font-family: 'Instrument Serif', serif;
+            font-size: 1.9rem; font-weight: 400; line-height: 1.2;
+        }
+        .screen p { font-size: 0.78rem; color: #a89880; line-height: 1.9; max-width: 300px; }
+        .chip {
+            font-size: 0.65rem; letter-spacing: 0.18em; text-transform: uppercase;
+            color: var(--gold); border: 1px solid #d4a85355;
+            padding: 0.35rem 1rem; border-radius: 99px;
+        }
+        .action-btn {
+            background: var(--gold); border: none; color: var(--bark);
+            font-family: 'Syne', sans-serif;
+            font-size: 0.72rem; font-weight: 700;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            padding: 1rem 2.4rem; cursor: pointer; border-radius: 2px;
+            box-shadow: 0 4px 24px rgba(212,168,83,0.25);
+            text-decoration: none; display: inline-block;
+            transition: transform 0.2s;
+        }
+        .action-btn:active { transform: scale(0.97); }
+        .secondary-btn {
+            background: transparent; border: 1px solid rgba(212,168,83,0.4);
+            color: var(--gold); font-family: 'Syne', sans-serif;
+            font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+            padding: 0.8rem 2rem; cursor: pointer; border-radius: 2px;
+        }
 
-                // Try to get compass heading from device
-                if (window.DeviceOrientationEvent) {
-                    const handler = (e) => {
-                        // webkitCompassHeading is iOS, alpha is Android (needs converting)
-                        let heading = e.webkitCompassHeading;
-                        if (heading === undefined || heading === null) {
-                            heading = e.alpha ? (360 - e.alpha) % 360 : 0;
-                        }
-                        placeEntity(heading);
-                        // Only need heading once — remove listener after placing
-                        window.removeEventListener('deviceorientation', handler);
-                    };
+        /* ── Landing ── */
+        #landing {
+            position: fixed; inset: 0; background: var(--bark);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 50; transition: opacity 0.7s ease;
+        }
+        #landing.hidden { opacity: 0; pointer-events: none; }
+        .l-tag {
+            font-size: 0.62rem; letter-spacing: 0.22em;
+            text-transform: uppercase; color: var(--gold); margin-bottom: 1.6rem;
+        }
+        .l-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: clamp(3rem, 14vw, 5.5rem);
+            font-weight: 400; line-height: 1.0;
+            text-align: center; color: var(--cream); margin-bottom: 0.4rem;
+        }
+        .l-title span { color: var(--gold); font-style: italic; }
+        .l-rule { width: 48px; height: 1px; background: var(--gold); opacity: 0.4; margin: 1.8rem 0; }
+        .l-sub {
+            font-size: 0.74rem; color: #a89880;
+            text-align: center; line-height: 2; max-width: 260px; margin-bottom: 2.8rem;
+        }
 
-                    // iOS 13+ requires permission
-                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        DeviceOrientationEvent.requestPermission()
-                            .then(state => {
-                                if (state === 'granted') {
-                                    window.addEventListener('deviceorientation', handler, { once: false });
-                                } else {
-                                    console.warn('Compass permission denied, placing at default bearing.');
-                                    placeEntity(0);
-                                }
-                            })
-                            .catch(() => placeEntity(0));
-                    } else {
-                        window.addEventListener('deviceorientation', handler);
-                    }
+        /*
+         * AR Quick Look anchor — must be <a rel="ar"><img></a> per Apple's spec.
+         * It lives in the DOM but is visually hidden. We .click() it
+         * synchronously inside the button's gesture handler.
+         */
+        #quicklook-anchor {
+            position: absolute;
+            width: 0; height: 0;
+            overflow: hidden;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        /* ── AR Overlay (WebXR / Android only) ── */
+        #ar-overlay {
+            display: none; position: fixed; inset: 0;
+            pointer-events: none; z-index: 10;
+        }
+        #ar-overlay.active { display: block; }
+        #top-bar {
+            position: absolute; top: 0; left: 0; right: 0;
+            padding: 2.8rem 1.4rem 1.4rem;
+            background: linear-gradient(to bottom, rgba(61,43,31,0.85) 0%, transparent 100%);
+            display: flex; align-items: flex-start; justify-content: space-between;
+        }
+        .tb-label {
+            font-size: 0.6rem; letter-spacing: 0.2em;
+            text-transform: uppercase; color: var(--gold); margin-bottom: 0.3rem;
+        }
+        #status-msg { font-size: 0.73rem; color: var(--cream); line-height: 1.6; max-width: 210px; }
+        #exit-btn {
+            pointer-events: all;
+            background: rgba(242,237,230,0.07);
+            border: 1px solid rgba(242,237,230,0.15); color: #a89880;
+            font-family: 'Syne', sans-serif;
+            font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+            padding: 0.55rem 1.1rem; cursor: pointer; border-radius: 2px;
+            backdrop-filter: blur(6px); transition: all 0.2s;
+        }
+        #scan-ring {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 120px; height: 120px;
+            pointer-events: none; transition: opacity 0.5s ease;
+        }
+        #scan-ring.hidden { opacity: 0; }
+        .ring {
+            position: absolute; inset: 0; border-radius: 50%;
+            border: 1.5px solid var(--gold);
+            animation: expand 2s ease-out infinite;
+        }
+        .ring:nth-child(2) { animation-delay: 0.65s; }
+        .ring:nth-child(3) { animation-delay: 1.3s; }
+        @keyframes expand {
+            0%   { transform: scale(0.3); opacity: 0.9; }
+            100% { transform: scale(1.8); opacity: 0; }
+        }
+        #progress-wrap {
+            position: absolute; bottom: 7rem; left: 50%;
+            transform: translateX(-50%);
+            width: 160px; opacity: 0; transition: opacity 0.4s ease;
+        }
+        #progress-wrap.visible { opacity: 1; }
+        #progress-label {
+            font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
+            color: #a89880; text-align: center; margin-bottom: 0.5rem;
+        }
+        #progress-track {
+            width: 100%; height: 2px;
+            background: rgba(212,168,83,0.2); border-radius: 99px; overflow: hidden;
+        }
+        #progress-bar {
+            height: 100%; width: 0%; background: var(--gold);
+            border-radius: 99px; transition: width 0.1s linear;
+        }
+        #place-btn {
+            pointer-events: none; position: absolute;
+            bottom: 3.5rem; left: 50%; transform: translateX(-50%);
+            background: var(--gold); border: none; color: var(--bark);
+            font-family: 'Syne', sans-serif;
+            font-size: 0.68rem; font-weight: 700;
+            letter-spacing: 0.15em; text-transform: uppercase;
+            padding: 0.9rem 2rem; cursor: pointer; border-radius: 2px;
+            opacity: 0; transition: opacity 0.4s ease;
+        }
+        #place-btn.visible { opacity: 1; pointer-events: all; }
+        #toast {
+            position: absolute; bottom: 5rem; left: 50%;
+            transform: translateX(-50%) translateY(12px);
+            background: rgba(61,43,31,0.8);
+            border: 1px solid rgba(212,168,83,0.35);
+            backdrop-filter: blur(12px);
+            padding: 0.75rem 1.6rem; border-radius: 99px;
+            font-size: 0.68rem; letter-spacing: 0.13em;
+            text-transform: uppercase; color: var(--gold);
+            white-space: nowrap; opacity: 0;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #bottom-hint {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            padding: 1.5rem 1.5rem 3.2rem;
+            background: linear-gradient(to top, rgba(61,43,31,0.75) 0%, transparent 100%);
+            display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+            transition: opacity 0.5s ease;
+        }
+        #bottom-hint.hidden { opacity: 0; }
+        .bh-dots { display: flex; gap: 6px; }
+        .bh-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--gold); animation: blink 1.6s ease-in-out infinite;
+        }
+        .bh-dot:nth-child(2) { animation-delay: 0.3s; }
+        .bh-dot:nth-child(3) { animation-delay: 0.6s; }
+        @keyframes blink { 0%,100%{opacity:0.2} 50%{opacity:1} }
+        #hint-text { font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: #a89880; }
+
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+<!-- Debug overlay -->
+<div id="debug">
+    <h3>🔍 AR Diagnostics</h3>
+    <div id="debug-rows"></div>
+    <button id="debug-retry" onclick="location.reload()">Reload & Retry</button>
+    <button id="debug-close">Close (Try Anyway)</button>
+</div>
+
+<!-- Not supported -->
+<div id="screen-unsupported" class="screen">
+    <div class="icon">🐾</div>
+    <div class="chip">AR · Not Available</div>
+    <h2>AR isn't supported<br>on this device</h2>
+    <p>Open in <strong>Chrome on Android</strong> or <strong>Safari on iPhone / iPad</strong>.</p>
+    <button class="secondary-btn" onclick="showDebug()">Show Diagnostics</button>
+</div>
+
+<!-- ARCore missing (Android only) -->
+<div id="screen-arcore" class="screen">
+    <div class="icon">📦</div>
+    <div class="chip">Android · Setup Required</div>
+    <h2>Google Play Services<br>for AR needed</h2>
+    <p>
+        This experience requires ARCore — a free install from the Play Store.
+        After installing, come back and tap <strong>Try Again</strong>.
+    </p>
+    <a id="arcore-install-btn" class="action-btn"
+       href="https://play.google.com/store/apps/details?id=com.google.ar.core"
+       target="_blank" rel="noopener">
+        Install on Play Store
+    </a>
+    <button class="secondary-btn" id="arcore-retry-btn">Try Again</button>
+    <button class="secondary-btn" onclick="showDebug()" style="margin-top:-0.4rem">Show Diagnostics</button>
+</div>
+
+<!-- Landing -->
+<div id="landing">
+    <div class="l-tag" id="landing-tag">WebXR · Indoor AR</div>
+    <h1 class="l-title">Your<br><span>dog</span><br>is here.</h1>
+    <div class="l-rule"></div>
+    <p class="l-sub" id="landing-sub">
+        Point your camera at the floor.<br>Your companion appears automatically.
+    </p>
+    <button id="start-btn" class="action-btn">Open Camera</button>
+
+    <!--
+        AR Quick Look trigger — iOS / Safari only.
+
+        Apple's spec requires the trigger to be an <a rel="ar"> whose
+        FIRST CHILD is an <img>. The anchor must be in the DOM and the
+        click must originate from a user gesture (we call .click()
+        synchronously inside the button handler, before any await).
+
+        The 1×1 transparent GIF satisfies the <img> requirement without
+        showing anything on screen.
+    -->
+    <a id="quicklook-anchor" rel="ar" href="./Dog.usdz">
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="" width="1" height="1">
+    </a>
+</div>
+
+<!-- AR overlay (WebXR / Android only — not used for Quick Look) -->
+<div id="ar-overlay">
+    <div id="top-bar">
+        <div>
+            <div class="tb-label">AR · Live</div>
+            <div id="status-msg">Point at the floor and move slowly…</div>
+        </div>
+        <button id="exit-btn">Exit</button>
+    </div>
+    <div id="scan-ring">
+        <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+    </div>
+    <div id="progress-wrap">
+        <div id="progress-label">Placing in a moment…</div>
+        <div id="progress-track"><div id="progress-bar"></div></div>
+    </div>
+    <button id="place-btn">Place Here Now</button>
+    <div id="toast">Walk around freely ✦</div>
+    <div id="bottom-hint">
+        <div class="bh-dots">
+            <div class="bh-dot"></div><div class="bh-dot"></div><div class="bh-dot"></div>
+        </div>
+        <div id="hint-text">Move your phone slowly to scan the floor</div>
+    </div>
+</div>
+
+<script>
+// ─── Diagnostics log ─────────────────────────────────────────────────────────
+const diagRows = [];
+
+function diag(label, value, status = 'ok') {
+    diagRows.push({ label, value, status });
+    console.log(`[AR diag] ${label}: ${value}`);
+}
+
+function showDebug() {
+    const el = document.getElementById('debug-rows');
+    el.innerHTML = diagRows.map(r =>
+        `<div class="drow"><span class="k">${r.label}</span> <span class="${r.status}">${r.value}</span></div>`
+    ).join('');
+    document.getElementById('debug').classList.add('visible');
+}
+
+document.getElementById('debug-close').addEventListener('click', () => {
+    document.getElementById('debug').classList.remove('visible');
+});
+
+window.addEventListener('error', e => {
+    diag('window.onerror', `${e.message} (${e.filename}:${e.lineno})`, 'err');
+});
+window.addEventListener('unhandledrejection', e => {
+    diag('unhandledrejection', String(e.reason), 'err');
+});
+
+// ─── Platform detection ───────────────────────────────────────────────────────
+
+// Detects iPhone, iPod, and iPad (including iPadOS 13+ which reports
+// navigator.platform as 'MacIntel' but has maxTouchPoints > 1).
+function isIOS() {
+    return (
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    );
+}
+
+// Checks whether Safari supports the AR Quick Look rel value.
+// This is the canonical way Apple recommends testing for the feature.
+function supportsQuickLook() {
+    const a = document.createElement('a');
+    return Boolean(a.relList && a.relList.supports && a.relList.supports('ar'));
+}
+
+// ─── Adapt landing UI immediately for iOS ────────────────────────────────────
+// Runs before any button tap so copy is correct on first render.
+if (isIOS()) {
+    document.getElementById('landing-tag').textContent = 'AR Quick Look · iOS';
+    document.getElementById('landing-sub').innerHTML =
+        'Tap the button and point your camera<br>at any flat surface.';
+    document.getElementById('start-btn').textContent = 'View in AR';
+}
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const $status       = document.getElementById('status-msg');
+const $overlay      = document.getElementById('ar-overlay');
+const $landing      = document.getElementById('landing');
+const $scanRing     = document.getElementById('scan-ring');
+const $toast        = document.getElementById('toast');
+const $hint         = document.getElementById('bottom-hint');
+const $progWrap     = document.getElementById('progress-wrap');
+const $progBar      = document.getElementById('progress-bar');
+const $placeBtn     = document.getElementById('place-btn');
+const $screenUnsup  = document.getElementById('screen-unsupported');
+const $screenARCore = document.getElementById('screen-arcore');
+const $qlAnchor     = document.getElementById('quicklook-anchor');
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+const PLACE_DISTANCE    = 2.0;
+const FALLBACK_DELAY    = 4000;
+const FALLBACK_DURATION = 3000;
+const FLOOR_Y_OFFSET    = 0.0;
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let renderer, scene, camera, clock;
+let xrSession = null;
+let hitTestSource = null, hitTestSourceRequested = false;
+let mixer = null;
+let dogPlaced = false, dogRef = null;
+let sessionStartTime = null;
+let fallbackStartTime = null, fallbackTriggered = false;
+let lastFrame = null;
+let lastTimestamp = null;
+
+// ─── Support detection ────────────────────────────────────────────────────────
+async function detectARSupport() {
+    const ua = navigator.userAgent;
+    diag('userAgent', ua.substring(0, 80));
+    diag('isIOS', String(isIOS()));
+
+    // ── iOS → AR Quick Look ──────────────────────────────────────────────────
+    if (isIOS()) {
+        const ql = supportsQuickLook();
+        diag('supportsQuickLook', String(ql), ql ? 'ok' : 'err');
+        return ql ? 'quicklook' : 'unsupported';
+    }
+
+    // ── Everything else → WebXR ──────────────────────────────────────────────
+    diag('navigator.xr', typeof navigator.xr, navigator.xr ? 'ok' : 'err');
+
+    if (!navigator.xr) {
+        diag('isSessionSupported', 'skipped — no navigator.xr', 'warn');
+        return 'unsupported';
+    }
+
+    let supported = false;
+    try {
+        supported = await navigator.xr.isSessionSupported('immersive-ar');
+        diag('isSessionSupported(immersive-ar)', String(supported), supported ? 'ok' : 'warn');
+    } catch (e) {
+        diag('isSessionSupported threw', String(e), 'err');
+    }
+
+    if (supported) return 'supported';
+
+    const isAndroidChrome =
+        /Android/i.test(ua) && /Chrome\/[0-9]/i.test(ua) && !/SamsungBrowser/i.test(ua);
+    diag('isAndroidChrome', String(isAndroidChrome), isAndroidChrome ? 'ok' : 'warn');
+
+    return isAndroidChrome ? 'arcore-missing' : 'unsupported';
+}
+
+// ─── Three.js init ────────────────────────────────────────────────────────────
+function initThree() {
+    diag('initThree', 'starting', 'ok');
+    scene  = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 30);
+    clock  = new THREE.Clock();
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    diag('initThree', 'canvas appended', 'ok');
+
+    scene.add(new THREE.HemisphereLight(0xfff5e0, 0x4a5c3f, 1.4));
+    const sun = new THREE.DirectionalLight(0xfff0cc, 1.6);
+    sun.position.set(3, 8, 4); sun.castShadow = true; scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xc8ddf0, 0.4);
+    fill.position.set(-4, 2, -3); scene.add(fill);
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+// ─── Load dog GLB (WebXR path) ────────────────────────────────────────────────
+function loadDog(callback) {
+    diag('loadDog', 'loading GLTFLoader script', 'ok');
+    const s = document.createElement('script');
+    // unpkg hosts the full Three.js package including examples/loaders
+    s.src = 'https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js';
+    s.onerror = () => {
+        diag('GLTFLoader script', 'FAILED to load from CDN', 'err');
+        makePlaceholder(callback);
+    };
+    s.onload = () => {
+        diag('GLTFLoader script', 'loaded ok', 'ok');
+        new THREE.GLTFLoader().load(
+            './Dog.glb',
+            (gltf) => {
+                diag('Dog.glb', 'loaded ok', 'ok');
+                const dog = gltf.scene;
+                dog.visible = false;
+                dog.traverse(n => { if (n.isMesh) n.castShadow = true; });
+                scene.add(dog);
+                if (gltf.animations?.length) {
+                    diag('animations', `found ${gltf.animations.length}`, 'ok');
+                    mixer = new THREE.AnimationMixer(dog);
+                    const clip = gltf.animations.find(c => c.name === 'Animation') ?? gltf.animations[0];
+                    mixer.clipAction(clip).setLoop(THREE.LoopRepeat, Infinity).play();
                 } else {
-                    // Fallback for desktop/no compass — place straight ahead
-                    console.warn('DeviceOrientation not supported, placing at default bearing.');
-                    placeEntity(0);
+                    diag('animations', 'none found', 'warn');
+                }
+                callback(dog);
+            },
+            undefined,
+            (err) => {
+                diag('Dog.glb', `load error: ${err}`, 'err');
+                makePlaceholder(callback);
+            }
+        );
+    };
+    document.head.appendChild(s);
+}
+
+function makePlaceholder(callback) {
+    diag('placeholder', 'using box model', 'warn');
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xc8a060 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.28, 0.65), mat);
+    body.position.y = 0.18; g.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.24), mat);
+    head.position.set(0, 0.38, 0.28); g.add(head);
+    g.visible = false; scene.add(g); callback(g);
+}
+
+// ─── Dog placement ────────────────────────────────────────────────────────────
+function placeDogFromViewerPose(dog, frame, referenceSpace, floorY = null) {
+    const vp = frame.getViewerPose(referenceSpace);
+    if (!vp) { diag('placeDog', 'no viewerPose', 'err'); return false; }
+
+    const m = vp.views[0].transform.matrix;
+    const fwdX = -m[8], fwdZ = -m[10];
+    const len = Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
+    const nx = len > 0.0001 ? fwdX / len : 0;
+    const nz = len > 0.0001 ? fwdZ / len : -1;
+
+    dog.position.set(
+        m[12] + nx * PLACE_DISTANCE,
+        (floorY ?? 0) + FLOOR_Y_OFFSET,
+        m[14] + nz * PLACE_DISTANCE
+    );
+    dog.rotation.set(0, Math.atan2(nx, nz) + Math.PI, 0);
+    dog.visible = true;
+    diag('placeDog', `x:${dog.position.x.toFixed(2)} y:${dog.position.y.toFixed(2)} z:${dog.position.z.toFixed(2)}`, 'ok');
+    return true;
+}
+
+function confirmPlacement() {
+    dogPlaced = true;
+    if (hitTestSource) { hitTestSource.cancel(); hitTestSource = null; }
+    $scanRing.classList.add('hidden');
+    $hint.classList.add('hidden');
+    $progWrap.classList.remove('visible');
+    $placeBtn.classList.remove('visible');
+    $status.textContent = 'Walk around freely';
+    $toast.classList.add('show');
+    setTimeout(() => $toast.classList.remove('show'), 3500);
+}
+
+// ─── XR frame loop ────────────────────────────────────────────────────────────
+function onXRFrame(timestamp, frame) {
+    if (!frame) return;
+    lastFrame = frame;
+
+    // Use the XR timestamp (ms) for delta — avoids clock drift inside WebXR.
+    const delta = lastTimestamp !== null ? (timestamp - lastTimestamp) / 1000 : 0;
+    lastTimestamp = timestamp;
+
+    if (mixer) mixer.update(delta);
+
+    const session = renderer.xr.getSession();
+    const refSpace = renderer.xr.getReferenceSpace();
+    const elapsed = performance.now() - sessionStartTime;
+
+    if (!hitTestSourceRequested) {
+        hitTestSourceRequested = true;
+        diag('hitTestSource', 'requesting…', 'ok');
+        session.requestReferenceSpace('viewer')
+            .then(vs => session.requestHitTestSource({ space: vs }))
+            .then(src => { hitTestSource = src; diag('hitTestSource', 'ready', 'ok'); })
+            .catch(e  => diag('hitTestSource', `FAILED: ${e}`, 'err'));
+    }
+
+    if (!dogPlaced && dogRef) {
+        if (hitTestSource) {
+            const hits = frame.getHitTestResults(hitTestSource);
+            if (hits.length > 0) {
+                const pose = hits[0].getPose(refSpace);
+                if (pose) {
+                    placeDogFromViewerPose(dogRef, frame, refSpace, pose.transform.position.y);
+                    confirmPlacement();
                 }
             }
-        });
+        }
 
-        AFRAME.registerComponent('play-all-animations', {
-            init: function () {
-                this.el.addEventListener('model-loaded', (e) => {
-                    const model = e.detail.model;
-                    if (!model) {
-                        console.warn('No model found in event detail.');
-                        return;
-                    }
-                    const clips = model.animations || [];
-                    console.log('Model loaded. Clips found:', clips.map(c => c.name));
-
-                    const clip = clips.find(c => c.name === 'Animation');
-                    if (!clip) {
-                        console.warn('Animation clip not found. Available:', clips.map(c => c.name));
-                        return;
-                    }
-
-                    const mixer = new THREE.AnimationMixer(model);
-                    const action = mixer.clipAction(clip);
-                    action.setLoop(THREE.LoopRepeat, Infinity);
-                    action.play();
-
-                    console.log('Animation started:', clip.name);
-                    this.mixer = mixer;
-                    this.lastTime = performance.now();
-                });
-            },
-            tick: function () {
-                if (!this.mixer) return;
-                const now = performance.now();
-                this.mixer.update((now - this.lastTime) / 1000);
-                this.lastTime = now;
+        if (!dogPlaced && elapsed > FALLBACK_DELAY) {
+            if (!fallbackTriggered) {
+                fallbackTriggered = true;
+                fallbackStartTime = performance.now();
+                diag('fallback', 'triggered — hit-test too slow', 'warn');
+                $status.textContent = 'Floor scan slow — placing automatically…';
+                $progWrap.classList.add('visible');
             }
+            const fe = performance.now() - fallbackStartTime;
+            $progBar.style.width = Math.min(100, (fe / FALLBACK_DURATION) * 100) + '%';
+            if (fe > FALLBACK_DURATION * 0.5) $placeBtn.classList.add('visible');
+            if (fe >= FALLBACK_DURATION) {
+                placeDogFromViewerPose(dogRef, frame, refSpace);
+                confirmPlacement();
+            }
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+// ─── Start AR — WebXR (Android) ───────────────────────────────────────────────
+async function startAR() {
+    diag('startAR', 'calling requestSession', 'ok');
+
+    let session;
+    try {
+        session = await navigator.xr.requestSession('immersive-ar', {
+            requiredFeatures: ['hit-test'],
+            optionalFeatures: ['dom-overlay'],
+            domOverlay: { root: document.getElementById('ar-overlay') }
         });
-    </script>
-</head>
-<body style='margin: 0; overflow: hidden;'>
-    <a-scene
-        vr-mode-ui="enabled: false"
-        embedded
-        arjs='sourceType: webcam; debugUIEnabled: false;'>
+        diag('requestSession', 'success', 'ok');
+    } catch (e) {
+        diag('requestSession', `FAILED: ${e.name} — ${e.message}`, 'err');
+        throw e;
+    }
 
-        <a-assets>
-            <a-asset-item id="dog" response-type="arraybuffer" src="./Dog.glb"></a-asset-item>
-        </a-assets>
+    xrSession = session;
+    initThree();
 
-        <a-entity place-at-bearing="bearing: 0; distance: 5; height: 3">
-            <a-entity
-                gltf-model="#dog"
-                scale="1 1 1"
-                rotation="10 0 0"
-                play-all-animations>
-            </a-entity>
-        </a-entity>
+    try {
+        renderer.xr.setReferenceSpaceType('local');
+        await renderer.xr.setSession(xrSession);
+        diag('setSession', 'success', 'ok');
+    } catch (e) {
+        diag('setSession', `FAILED: ${e}`, 'err');
+        throw e;
+    }
 
-        <a-camera look-controls="enabled: true"></a-camera>
+    sessionStartTime = performance.now();
+    $overlay.classList.add('active');
+    $landing.classList.add('hidden');
+    xrSession.addEventListener('end', onSessionEnd);
 
-    </a-scene>
+    $placeBtn.addEventListener('click', () => {
+        if (!dogPlaced && dogRef && lastFrame) {
+            placeDogFromViewerPose(dogRef, lastFrame, renderer.xr.getReferenceSpace());
+            confirmPlacement();
+        }
+    });
+
+    loadDog(dog => {
+        dogRef = dog;
+        diag('renderLoop', 'starting', 'ok');
+        renderer.setAnimationLoop(onXRFrame);
+    });
+}
+
+// ─── Start AR — Quick Look (iOS / Safari) ─────────────────────────────────────
+// IMPORTANT: this must be called SYNCHRONOUSLY inside the user-gesture handler
+// (the click event). Any await before this call causes Safari to block the
+// Quick Look launch as a popup.
+function startQuickLook() {
+    diag('startQuickLook', 'clicking anchor', 'ok');
+    $qlAnchor.click();
+}
+
+// ─── Session end (WebXR) ──────────────────────────────────────────────────────
+function onSessionEnd() {
+    diag('session', 'ended', 'ok');
+    hitTestSource = null; hitTestSourceRequested = false;
+    fallbackTriggered = false; dogPlaced = false;
+    lastFrame = null; lastTimestamp = null;
+
+    $overlay.classList.remove('active');
+    $landing.classList.remove('hidden');
+    $scanRing.classList.remove('hidden');
+    $hint.classList.remove('hidden');
+    $progWrap.classList.remove('visible');
+    $placeBtn.classList.remove('visible');
+    $progBar.style.width = '0%';
+    $status.textContent = 'Point at the floor and move slowly…';
+
+    if (mixer && dogRef) {
+        mixer.stopAllAction();
+        mixer.uncacheRoot(dogRef);
+    }
+    mixer = null;
+    dogRef = null;
+
+    renderer?.setAnimationLoop(null);
+    renderer?.domElement.remove();
+    renderer?.dispose();
+    renderer = null; xrSession = null;
+}
+
+// ─── Main entry ───────────────────────────────────────────────────────────────
+async function handleStart() {
+    diag('handleStart', 'tapped', 'ok');
+
+    // ── iOS: trigger Quick Look NOW, before any await ────────────────────────
+    // detectARSupport() is async (has awaits inside for the WebXR path), but
+    // on iOS we know the answer immediately. Calling startQuickLook() here —
+    // synchronously and before any await — keeps us inside the original gesture
+    // context that Safari requires to open the AR viewer.
+    if (isIOS()) {
+        if (supportsQuickLook()) {
+            diag('support result', 'quicklook', 'ok');
+            startQuickLook();
+        } else {
+            diag('support result', 'unsupported (no Quick Look)', 'err');
+            $screenUnsup.classList.add('visible');
+            $landing.classList.add('hidden');
+        }
+        return;
+    }
+
+    // ── Non-iOS: async WebXR detection ──────────────────────────────────────
+    let support;
+    try {
+        support = await detectARSupport();
+        diag('support result', support, support === 'supported' ? 'ok' : 'warn');
+    } catch (e) {
+        diag('detectARSupport threw', String(e), 'err');
+        support = 'unsupported';
+    }
+
+    if (support === 'unsupported') {
+        $screenUnsup.classList.add('visible');
+        $landing.classList.add('hidden');
+        return;
+    }
+
+    if (support === 'arcore-missing') {
+        $screenARCore.classList.add('visible');
+        $landing.classList.add('hidden');
+        return;
+    }
+
+    try {
+        await startAR();
+    } catch (e) {
+        diag('startAR caught', `${e.name}: ${e.message}`, 'err');
+        renderer?.domElement.remove();
+        renderer?.dispose();
+        renderer = null;
+
+        if (e.name === 'NotSupportedError' || e.name === 'SecurityError') {
+            $screenARCore.classList.add('visible');
+            $landing.classList.add('hidden');
+        } else {
+            showDebug();
+        }
+    }
+}
+
+document.getElementById('start-btn').addEventListener('click', handleStart);
+
+document.getElementById('arcore-retry-btn').addEventListener('click', () => {
+    $screenARCore.classList.remove('visible');
+    handleStart();
+});
+
+document.getElementById('exit-btn').addEventListener('click', () => xrSession?.end());
+</script>
 </body>
 </html>
